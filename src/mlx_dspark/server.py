@@ -27,6 +27,9 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import mlx.core as mx
+from mlx.utils import tree_flatten
+
 from .generate import (
     GenResult,
     dflash_generate,
@@ -142,6 +145,18 @@ class Engine:
             draft, _ = load_dflash(drafter_repo, quantize=drafter_bits > 0,
                                    bits=max(drafter_bits, 2))
             draft.bind(tgt.model)
+
+        # Materialize EVERY array in the module trees before handing the models to the
+        # generation worker thread. MLX >= 0.31 streams are thread-local: a lazy array
+        # recorded on this (loading) thread cannot be evaluated on another thread — it dies
+        # with "There is no Stream(gpu, N) in current thread". The loaders only eval
+        # `parameters()`, which skips underscore-prefixed buffers such as `rope._freqs`
+        # (created lazily in __init__ on Gemma's global-attention layers and every drafter
+        # layer), so the first request's prefill used to crash on exactly those. Evaluated
+        # arrays are plain data and safe to share across threads.
+        for module in (tgt.model, draft):
+            if module is not None:
+                mx.eval([v for _, v in tree_flatten(module) if isinstance(v, mx.array)])
 
         # default cap: dspark's measured optimum is 2; dflash's native point is the full block
         if max_draft_tokens is None and mode == "dspark":

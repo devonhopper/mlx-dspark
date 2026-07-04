@@ -19,6 +19,10 @@ dependencies = [
     "mlx-lm>=0.31.3",
     # mlx-vlm gives us Gemma-4 + the existing EAGLE3/DFlash spec-decode reference impl
     "mlx-vlm>=0.6.3",
+    # transformers 5.13.0 requires a config *class* in AutoTokenizer.register(), but
+    # mlx-lm registers its NewlineTokenizer by string and crashes at import. Drop this
+    # pin once mlx-lm ships the fix (https://github.com/ml-explore/mlx-lm/issues/1458).
+    "transformers<5.13",
     "numpy",
     "huggingface-hub",
 ]
